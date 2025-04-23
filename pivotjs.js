@@ -1,123 +1,170 @@
-    let data = [];
-    const rowSelect = document.getElementById('rowField');
-    const colSelect = document.getElementById('columnField');
-    const valSelect = document.getElementById('valueField');
-    const aggSelect = document.getElementById('aggregateFunc');
+let data = [];
 
-    document.getElementById('csvFile').addEventListener('change', function (e) {//← get the selected file
-      const file = e.target.files[0];                                           // read the file, show preview, etc.
-      if (!file) return;
+const csvInput = document.getElementById('csvFile');
+const dateFieldSelect = document.getElementById('dateField');
+const dateGroupSelect = document.getElementById('dateGroup');
+const colSelect = document.getElementById('columnField');
+const valueFieldsContainer = document.getElementById('valueFieldsContainer');
 
-      Papa.parse(file, {     //parseing the csv file to object formate
-        header: true,        // first row of the CSV as the header row (column names), and convert each row into an object with key-value pairs.
-        skipEmptyLines: true,
-        complete: function(results) { 
-          data = results.data;      //store all parsed data in the object formate //data--> global variable
+csvInput.addEventListener('change', function (e) {
+  const file = e.target.files[0];
+  if (!file) return;
 
-          // Show preview
-          displayCSVPreview(data);
+  Papa.parse(file, {
+    header: true,
+    skipEmptyLines: true,
+    complete: function (results) {
+      data = results.data;
+      const fields = Object.keys(data[0]);
 
-          const fields = Object.keys(data[0]);//extracting the keys from the first row object.
-          [rowSelect, colSelect, valSelect].forEach(select => {
-            select.innerHTML = '';
-            fields.forEach(f => {//loop through each column name
-              const opt = document.createElement('option');
-              opt.value = opt.textContent = f;
-              select.appendChild(opt);
-            });
-          });
+      [dateFieldSelect, colSelect].forEach(select => {
+        select.innerHTML = '';
+        fields.forEach(f => {
+          const opt = document.createElement('option');
+          opt.value = opt.textContent = f;
+          select.appendChild(opt);
+        });
+      });
 
-          document.getElementById('config').style.display = 'block';
+      valueFieldsContainer.innerHTML = '';
+      fields.forEach(f => {
+        const label = document.createElement('label');
+        label.innerHTML = `${f}: 
+          <select data-field="${f}">
+            <option value="">Ignore</option>
+            <option value="sum">Sum</option>
+            <option value="avg">Average</option>
+            <option value="count">Count</option>
+          </select><br>`;
+        valueFieldsContainer.appendChild(label);
+      });
+
+      document.getElementById('config').style.display = 'block';
+    }
+  });
+});
+
+function formatDate(dateStr, type) {
+  const d = new Date(dateStr);
+  if (isNaN(d)) return dateStr;
+  const month = d.getMonth() + 1;
+  const quarter = Math.floor((month - 1) / 3) + 1;
+  switch (type) {
+    case 'year': return `${d.getFullYear()}`;
+    case 'month': return `${d.getFullYear()}-${month.toString().padStart(2, '0')}`;
+    case 'quarter': return `${d.getFullYear()} Q${quarter}`;
+    case 'day': default: return `${d.toISOString().split('T')[0]}`;
+  }
+}
+
+function generatePivot() {
+  const dateField = dateFieldSelect.value;
+  const dateGroupType = dateGroupSelect.value;
+  const colField = colSelect.value;
+
+  const valFieldAgg = {};
+  const selects = valueFieldsContainer.querySelectorAll('select');
+  selects.forEach(sel => {
+    if (sel.value) valFieldAgg[sel.dataset.field] = sel.value;
+  });
+
+  const pivot = {};
+  const counts = {};
+
+  data.forEach(row => {
+    const rowKey = formatDate(row[dateField], dateGroupType);
+    const colKey = row[colField];
+
+    if (!pivot[rowKey]) pivot[rowKey] = {};
+    if (!counts[rowKey]) counts[rowKey] = {};
+
+    Object.keys(valFieldAgg).forEach(field => {
+      const agg = valFieldAgg[field];
+      const key = `${colKey}_${field}_${agg}`;
+      const value = parseFloat(row[field]);
+
+      if (!pivot[rowKey][key]) pivot[rowKey][key] = 0;
+      if (!counts[rowKey][key]) counts[rowKey][key] = 0;
+
+      if (agg === 'sum' && !isNaN(value)) {
+        pivot[rowKey][key] += value;
+      } else if (agg === 'avg' && !isNaN(value)) {
+        pivot[rowKey][key] += value;
+        counts[rowKey][key]++;
+      } else if (agg === 'count') {
+        pivot[rowKey][key]++;
+      }
+    });
+  });
+
+  const allCols = [...new Set(data.map(row => row[colField]))].sort();
+  const allRows = Object.keys(pivot).sort();
+
+  let html = `<table><thead><tr><th>${dateField} (${dateGroupType})</th>`;
+  allCols.forEach(col => {
+    Object.keys(valFieldAgg).forEach(() => {
+      html += `<th class="col-header">${col}</th>`;
+    });
+  });
+  Object.keys(valFieldAgg).forEach(field => {
+    html += `<th class="col-header">Grand Total (${field})</th>`;
+  });
+  html += `</tr><tr><th></th>`;
+  allCols.forEach(() => {
+    Object.entries(valFieldAgg).forEach(([field, agg]) => {
+      html += `<th class="sub-header">${field} (${agg})</th>`;
+    });
+  });
+  html += `</tr></thead><tbody>`;
+
+  allRows.forEach(rowKey => {
+    html += `<tr><td>${rowKey}</td>`;
+    const rowTotals = {}, rowCounts = {};
+    allCols.forEach(col => {
+      Object.entries(valFieldAgg).forEach(([field, agg]) => {
+        const key = `${col}_${field}_${agg}`;
+        let val = pivot[rowKey][key] || 0;
+        if (agg === 'avg' && counts[rowKey][key]) val /= counts[rowKey][key];
+        html += `<td>${val.toFixed(2)}</td>`;
+        rowTotals[field] = (rowTotals[field] || 0) + val;
+        if (agg === 'avg' && (pivot[rowKey][key] || 0)) {
+          rowCounts[field] = (rowCounts[field] || 0) + 1;
         }
       });
     });
+    Object.entries(valFieldAgg).forEach(([field, agg]) => {
+      const total = rowTotals[field] || 0;
+      const count = rowCounts[field] || 1;
+      html += `<td class="grand-total">${(agg === 'avg' ? total / count : total).toFixed(2)}</td>`;
+    });
+    html += `</tr>`;
+  });
 
-    function displayCSVPreview(data) {
-      if (!data.length) return;
-
-      const headers = Object.keys(data[0]);
-      let html = '<table><thead><tr>';
-      headers.forEach(header => {
-        html += `<th>${header}</th>`;
-      });
-      html += '</tr></thead><tbody>';
-
-      data.forEach(row => {
-        html += '<tr>';
-        headers.forEach(header => {
-          html += `<td>${row[header]}</td>`;
-        });
-        html += '</tr>';
-      });
-
-      html += '</tbody></table>';
-      document.getElementById('csvPreview').innerHTML = html;
-    }
-
-    function generatePivot() {
-      const rowField = rowSelect.value;
-      const colField = colSelect.value;
-      const valField = valSelect.value;
-      const aggFunc = aggSelect.value;
-
-      const pivot = {};
-      const counts = {};  // Needed for average
-
-      data.forEach(row => {
-        const rowKey = row[rowField];
-        const colKey = row[colField];
-        const rawValue = row[valField];
-        const value = parseFloat(rawValue);
-
-        if (!pivot[rowKey]) {
-          pivot[rowKey] = {};
-          counts[rowKey] = {};
+  html += `<tr class="grand-total"><td><b>Grand Total</b></td>`;
+  const colTotals = {}, colCounts = {};
+  allCols.forEach(col => {
+    Object.entries(valFieldAgg).forEach(([field, agg]) => {
+      let total = 0, count = 0;
+      allRows.forEach(rowKey => {
+        const key = `${col}_${field}_${agg}`;
+        let val = pivot[rowKey][key] || 0;
+        if (agg === 'avg' && counts[rowKey][key]) {
+          val /= counts[rowKey][key];
+          count++;
         }
-
-        if (!pivot[rowKey][colKey]) {
-          pivot[rowKey][colKey] = 0;
-          counts[rowKey][colKey] = 0;
-        }
-
-        switch (aggFunc) {
-          case 'sum':
-            if (!isNaN(value)) pivot[rowKey][colKey] += value;
-            break;
-          case 'count':
-            pivot[rowKey][colKey] += 1;
-            break;
-          case 'avg':
-            if (!isNaN(value)) {
-              pivot[rowKey][colKey] += value;
-              counts[rowKey][colKey] += 1;
-            }
-            break;
-        }
+        total += val;
       });
+      colTotals[field] = (colTotals[field] || 0) + total;
+      colCounts[field] = (colCounts[field] || 0) + (agg === 'avg' ? count : 1);
+      html += `<td><b>${(agg === 'avg' ? total / (count || 1) : total).toFixed(2)}</b></td>`;
+    });
+  });
+  Object.entries(valFieldAgg).forEach(([field, agg]) => {
+    const total = colTotals[field] || 0;
+    const count = colCounts[field] || 1;
+    html += `<td><b>${(agg === 'avg' ? total / count : total).toFixed(2)}</b></td>`;
+  });
+  html += `</tr></tbody></table>`;
 
-      const allCols = [...new Set(data.map(row => row[colField]))].sort();//Creates a list of unique column values (e.g., all products like Apple, Banana)
-
-      //data.map(row => row[colField]) → extracts the values from the selected column field
-
-      //new Set(...) → removes duplicates
-      const allRows = Object.keys(pivot).sort();
-
-      let html = `<table><thead><tr><th>${rowField}</th>`;
-      allCols.forEach(col => html += `<th>${col}</th>`);
-      html += '</tr></thead><tbody>';
-
-      allRows.forEach(rowVal => {
-        html += `<tr><td>${rowVal}</td>`;
-        allCols.forEach(colVal => {
-          let cell = pivot[rowVal][colVal] || 0;
-          if (aggFunc === 'avg' && counts[rowVal][colVal]) {
-            cell = (cell / counts[rowVal][colVal]).toFixed(2);
-          }
-          html += `<td>${cell}</td>`;
-        });
-        html += '</tr>';
-      });
-
-      html += '</tbody></table>';
-      document.getElementById('pivotTable').innerHTML = html;
-    }
+  document.getElementById('pivotTable').innerHTML = html;
+}
