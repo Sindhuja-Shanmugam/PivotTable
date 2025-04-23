@@ -2,41 +2,37 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>CSV Pivot Table Generator</title>
-  <link rel="stylesheet" href="pivotcss.css">
+  <title>Pivot Table Generator</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 </head>
 <body>
 
-  <h2>Upload CSV and Generate Pivot Table</h2>
-  <input type="file" id="csvFile" accept=".csv" />
+<h2>📊 CSV Pivot Table Generator</h2>
 
-  <h3>CSV Preview</h3>
-  <div id="csvPreview" style="margin-bottom: 30px;"></div>
+<input type="file" id="csvFile" accept=".csv"><br>
 
-  <div id="config" style="display:none;">
-    <label>Row:
-      <select id="rowField"></select>
-    </label>
-    <label>Column:
-      <select id="columnField"></select>
-    </label>
-    <label>Value:
-      <select id="valueField"></select>
-    </label>
-    <label>Aggregate:
-      <select id="aggregateFunc">
-        <option value="sum">Sum</option>
-        <option value="count">Count</option>
-        <option value="avg">Average</option>
-      </select>
-    </label>
-    <button onclick="generatePivot()">Generate Pivot Table</button>
-  </div>
+<div id="config" style="display:none;">
+  <label>Row Field: <select id="dateField"></select></label>
+  <label>Group By:
+    <select id="dateGroup">
+      <option value="day">Day</option>
+      <option value="month">Month</option>
+      <option value="quarter">Quarter</option>
+      <option value="year">Year</option>
+    </select>
+  </label><br>
 
-  <div id="pivotTable"></div>
+  <label>Column Field: <select id="columnField"></select></label><br>
 
-  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
-  <script src="pivotjs.js"></script>
+  <label>Value Fields:</label><br>
+  <div id="valueFieldsContainer"></div>
+  
+  <button onclick="generatePivot()">Generate Pivot</button>
+</div>
 
+<div id="pivotTable"></div>
+
+<script src="script.js"></script>
 </body>
 </html>
